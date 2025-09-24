@@ -88,7 +88,6 @@ def relu_forward(x):
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     
     out = np.where(x > 0, x, 0)
-    out = np.array(out)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################

@@ -55,7 +55,10 @@ class TwoLayerNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        self.params['W1'] = np.random.normal(loc=0.0,scale=weight_scale,size=(input_dim, hidden_dim))
+        self.params['W2'] = np.random.normal(loc=0.0,scale=weight_scale,size=(hidden_dim, num_classes))
+        self.params['b1'] = np.zeros((hidden_dim))
+        self.params['b2'] = np.zeros((num_classes))
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -88,7 +91,9 @@ class TwoLayerNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        first_scores = affine_forward(X, self.params['W1'], self.params['b1'])[0]
+        relu_scores = relu_forward(first_scores)[0]
+        scores = affine_forward(relu_scores, self.params['W2'], self.params['b2'])[0]
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -97,7 +102,7 @@ class TwoLayerNet(object):
 
         # If y is None then we are in test mode so just return scores
         if y is None:
-            return scores
+          return scores
 
         loss, grads = 0, {}
         ############################################################################
@@ -111,8 +116,21 @@ class TwoLayerNet(object):
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+        
+        loss, dx = softmax_loss(scores, y)
 
-        pass
+        dx2, grads['W2'], grads['b2'] = affine_backward(dx, (relu_scores, self.params['W2'], self.params['b2']))
+        relu_grad = relu_backward(dx2, first_scores)
+        _, grads['W1'], grads['b1'] = affine_backward(relu_grad, (X, self.params['W1'], self.params['b1']))
+
+        reg_loss = 0.5 * self.reg * (
+          np.sum(self.params['W1'] ** 2) + 
+          np.sum(self.params['W2'] ** 2)
+        )
+        
+        loss += reg_loss
+        grads['W1'] += self.params['W1'] * self.reg
+        grads['W2'] += self.params['W2'] * self.reg
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
