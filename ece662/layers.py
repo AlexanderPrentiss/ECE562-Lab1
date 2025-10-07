@@ -748,7 +748,10 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    x_reshaped = x.transpose(0, 2, 3, 1).reshape(-1, C)
+    out_bn, cache = batchnorm_forward(x_reshaped, gamma, beta, bn_param)
+    out = out_bn.reshape(N, H, W, C).transpose(0, 3, 1, 2)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -782,7 +785,10 @@ def spatial_batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = dout.shape
+    dout_reshaped = dout.transpose(0, 2, 3, 1).reshape(-1, C)
+    dx_bn, dgamma, dbeta = batchnorm_backward(dout_reshaped, cache)
+    dx = dx_bn.reshape(N, H, W, C).transpose(0, 3, 1, 2)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -822,7 +828,14 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    x_grouped = x.reshape(N, G, C // G, H, W)
+    mean = np.mean(x_grouped, axis=(2, 3, 4), keepdims=True)
+    var = np.var(x_grouped, axis=(2, 3, 4), keepdims=True)
+    x_hat = (x_grouped - mean) / np.sqrt(var + eps)
+    x_hat = x_hat.reshape(N, C, H, W)
+    out = gamma[None, :, None, None] * x_hat + beta[None, :, None, None]
+    cache = (G, x, x_hat, mean, var, beta, gamma, eps)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -852,7 +865,21 @@ def spatial_groupnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    G, x, x_hat, mean, var, beta, gamma, eps = cache
+    N, C, H, W = x.shape
+
+    dbeta = np.sum(dout, axis=(0, 2, 3), keepdims=True)
+    dgamma = np.sum(dout * x_hat, axis=(0, 2, 3), keepdims=True)
+    dx_hat = dout * gamma[None, :, None, None]
+    dx_hat_grouped = dx_hat.reshape(N, G, C // G, H, W)
+    x_hat_grouped = x_hat.reshape(N, G, C // G, H, W)
+    group_size = (C // G) * H * W
+    dvar = np.sum(dx_hat_grouped * (x_hat_grouped * -0.5) / (var + eps), axis=(2, 3, 4), keepdims=True)
+    dmean = np.sum(-dx_hat_grouped / np.sqrt(var + eps), axis=(2, 3, 4), keepdims=True) + dvar * np.sum(-2.0 * (x_hat_grouped * np.sqrt(var + eps)), axis=(2, 3, 4), keepdims=True) / group_size
+    dx_grouped = dx_hat_grouped / np.sqrt(var + eps) + dvar * 2.0 * (x_hat_grouped * np.sqrt(var + eps)) / group_size + dmean / group_size
+    dx = dx_grouped.reshape(N, C, H, W)
+    dgamma = dgamma.reshape(C)
+    dbeta = dbeta.reshape(C)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
