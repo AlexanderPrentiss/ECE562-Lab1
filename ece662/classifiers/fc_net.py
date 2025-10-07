@@ -284,29 +284,24 @@ class FullyConnectedNet(object):
         # layer, etc.                                                              #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-        if self.normalization == "batchnorm":
-            out = X
-            caches = {}
-            for i in range(1, self.num_layers):
-                out, fc_cache = affine_forward(out, self.params[f'W{i}'], self.params[f'b{i}'])
-                out, bn_cache = batchnorm_forward(out, self.params[f'gamma{i}'], self.params[f'beta{i}'], self.bn_params[i-1])
-                out, relu_cache = relu_forward(out)
-                caches[f'fc{i}'] = fc_cache
-                caches[f'bn{i}'] = bn_cache
-                caches[f'relu{i}'] = relu_cache
-            scores, fc_cache = affine_forward(out, self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}'])
-            caches[f'fc{self.num_layers}'] = fc_cache
-        else:
-          out = X
-          caches = {}
-          for i in range(1, self.num_layers):
-              out, fc_cache = affine_forward(out, self.params[f'W{i}'], self.params[f'b{i}'])
-              out, relu_cache = relu_forward(out)
-              caches[f'fc{i}'] = fc_cache
-              caches[f'relu{i}'] = relu_cache
-          scores, fc_cache = affine_forward(out, self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}'])
-          caches[f'fc{self.num_layers}'] = fc_cache
+        out = X
+        caches = []
+        for i in range(1, self.num_layers):
+            out, fc_cache = affine_forward(out, self.params[f"W{i}"], self.params[f"b{i}"])
+            if self.normalization == "batchnorm":
+                out, norm_cache = batchnorm_forward(out, self.params[f"gamma{i}"], self.params[f"beta{i}"], self.bn_params[i - 1])
+            elif self.normalization == "layernorm":
+                out, norm_cache = layernorm_forward(out, self.params[f"gamma{i}"], self.params[f"beta{i}"], self.bn_params[i - 1])
+            else:
+                norm_cache = None
+            out, relu_cache = relu_forward(out)
+            if self.use_dropout:
+                out, dropout_cache = dropout_forward(out, self.dropout_param)
+            else:
+                dropout_cache = None
 
+            caches.append((fc_cache, norm_cache, relu_cache, dropout_cache))
+        scores, final_fc_cache = affine_forward(out, self.params[f"W{self.num_layers}"], self.params[f"b{self.num_layers}"])
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -331,41 +326,31 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        if self.normalization == "batchnorm":
-            data_loss, dscores = softmax_loss(scores, y)
-            reg_loss = 0.0
-            for i in range(1, self.num_layers + 1):
-                reg_loss += 0.5 * self.reg * np.sum(self.params[f'W{i}'] ** 2)
-            loss = data_loss + reg_loss
+        data_loss, dscores = softmax_loss(scores, y)
+        reg_loss = 0.0
 
-            dx, dw, db = affine_backward(dscores, caches[f'fc{self.num_layers}'])
-            grads[f'W{self.num_layers}'] = dw + self.reg * self.params[f'W{self.num_layers}']
-            grads[f'b{self.num_layers}'] = db
-
-            for i in reversed(range(1, self.num_layers)):
-                drelu = relu_backward(dx, caches[f'relu{i}'])
-                dbn, dgamma, dbeta = batchnorm_backward(drelu, caches[f'bn{i}'])
-                dx, dw, db = affine_backward(dbn, caches[f'fc{i}'])
-                grads[f'W{i}'] = dw + self.reg * self.params[f'W{i}']
-                grads[f'b{i}'] = db
-                grads[f'gamma{i}'] = dgamma
-                grads[f'beta{i}'] = dbeta
-        else:
-          data_loss, dscores = softmax_loss(scores, y)
-          reg_loss = 0.0
-          for i in range(1, self.num_layers + 1):
-              reg_loss += 0.5 * self.reg * np.sum(self.params[f'W{i}'] ** 2)
-          loss = data_loss + reg_loss
-
-          dx, dw, db = affine_backward(dscores, caches[f'fc{self.num_layers}'])
-          grads[f'W{self.num_layers}'] = dw + self.reg * self.params[f'W{self.num_layers}']
-          grads[f'b{self.num_layers}'] = db
-
-          for i in reversed(range(1, self.num_layers)):
-              drelu = relu_backward(dx, caches[f'relu{i}'])
-              dx, dw, db = affine_backward(drelu, caches[f'fc{i}'])
-              grads[f'W{i}'] = dw + self.reg * self.params[f'W{i}']
-              grads[f'b{i}'] = db
+        for i in range(1, self.num_layers + 1):
+            reg_loss += 0.5 * self.reg * np.sum(self.params[f"W{i}"] ** 2)
+        loss = data_loss + reg_loss
+        dx, dw, db = affine_backward(dscores, final_fc_cache)
+        grads[f"W{self.num_layers}"] = dw + self.reg * self.params[f"W{self.num_layers}"]
+        grads[f"b{self.num_layers}"] = db
+        for i in reversed(range(1, self.num_layers)):
+            fc_cache, norm_cache, relu_cache, dropout_cache = caches[i - 1]
+            if self.use_dropout:
+                dx = dropout_backward(dx, dropout_cache)
+            dx = relu_backward(dx, relu_cache)
+            if self.normalization == "batchnorm":
+                dx, dgamma, dbeta = batchnorm_backward(dx, norm_cache)
+                grads[f"gamma{i}"] = dgamma
+                grads[f"beta{i}"] = dbeta
+            elif self.normalization == "layernorm":
+                dx, dgamma, dbeta = layernorm_backward(dx, norm_cache)
+                grads[f"gamma{i}"] = dgamma
+                grads[f"beta{i}"] = dbeta
+            dx, dw, db = affine_backward(dx, fc_cache)
+            grads[f"W{i}"] = dw + self.reg * self.params[f"W{i}"]
+            grads[f"b{i}"] = db
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
